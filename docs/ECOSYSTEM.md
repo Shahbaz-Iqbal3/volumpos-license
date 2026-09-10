@@ -13,6 +13,7 @@ picking the system up later.
 | Repo | Visibility | Default branch | Purpose |
 |---|---|---|---|
 | `Shahbaz-Iqbal3/volumpos-license` | **Private** | `main` | Shared license package (`@volumpos/license`). |
+| `Shahbaz-Iqbal3/volumpos-licensing-hub` | **Private** | `main` | Licensing Hub: Supabase schema, `/activate`, `/renew`, `/verify`, `/admin`, admin panel. |
 | `Shahbaz-Iqbal3/resturent-pos` | **Private** | `restaurant-pivot` | VolumPOS Restaurant (Electron + React + SQLite). |
 | `Shahbaz-Iqbal3/desktop_POS` | **Private** | `main` | VolumPOS Fabrics (Electron + React + SQLite). Also publishes to `volumpos-releases`. |
 | `Shahbaz-Iqbal3/volumpos-releases` | **Public** | `main` | Release artifacts consumed by the landing page. |
@@ -22,6 +23,7 @@ Local checkout layout:
 ```
 F:\Projects\POS\
 ├── volumpos-license\          # shared package (own git repo)
+├── volumpos-licensing-hub\    # licensing hub (own git repo)
 ├── resturent-pos\             # Restaurant product (own git repo)
 │   ├── desktop_POS\           # the Electron app
 │   ├── pwa-app\               # owner dashboard PWA
@@ -203,7 +205,7 @@ Products publish on a GitHub Release event (`release.yml`):
 | `desktop_POS` Actions | `VOLUMPOS_LICENSE_DEPLOY_KEY` | Same. |
 | Product Actions | `SUPABASE_*`, `VITE_*`, `GH_UPLOAD_TOKEN`, `WINDOWS_CSC_*` | Cloud sync + release signing. |
 | `dev-dashboard/.env` (local) | `LICENSE_VAULT_PASSWORD`, `LICENSE_SIGN_SECRET`, `DASHBOARD_PASSWORD` | Legacy issuer. |
-| Licensing hub (planned) | `LICENSE_PRIVATE_KEY` | Family signing key. |
+| Licensing hub (Supabase secrets) | `LICENSE_PRIVATE_KEY`, `LICENSE_ADMIN_SECRET` | Family signing key + admin API gate. |
 
 Never commit these. `.env`, `license-vault.enc`, and `license-keys.json` are all
 gitignored.
@@ -229,7 +231,7 @@ This is disruptive, which is why the current keypair is being reused.
 |---|---|---|
 | **0** | No disruption to existing customers | Done by design — legacy keys still verify; only license code changed. |
 | **1** | Shared license module | **Done.** Package built, tested, hosted privately, and integrated into `resturent-pos`. |
-| **2** | Licensing Hub (Supabase): tables + `/activate`, `/renew`, `/verify` + admin panel | **In progress.** |
+| **2** | Licensing Hub (Supabase): tables + `/activate`, `/renew`, `/verify` + admin panel | **Code complete, not yet deployed.** See §9. |
 | **3** | Roll out to all products: Fabric integration, activation screen, multi-machine, silent renew | Not started. |
 | **4** | Backfill existing customers at natural touchpoints | Not started. |
 | **5** | Retire legacy code; enable abuse alerts | Not started. |
@@ -262,7 +264,57 @@ This is disruptive, which is why the current keypair is being reused.
 
 ---
 
-## 8. Known constraints / gotchas
+## 8. Licensing Hub (Phase 2)
+
+Repo: `Shahbaz-Iqbal3/volumpos-licensing-hub` (private). See its own README for
+the full deploy runbook. Summary:
+
+### 9.1 What it is
+
+A **separate** Supabase project, developer-owned, decoupled from every
+customer's data-sync project. Exposed only via Edge Functions.
+
+### 9.2 Schema
+
+`customers`, `subscriptions`, `licenses`, `machine_activations`, `checkin_log`,
+plus `id_counters` for race-safe human ids (`CUST-0001`, `LIC-0000001`).
+
+- RLS is enabled on every table with **no policies** — only `service_role`
+  (used inside the Functions) can read or write.
+- The **purchase key is never stored**: only `key_hash` (SHA-256) and
+  `key_last4`. The raw key is returned exactly once at issuance.
+
+### 9.3 Endpoints
+
+| Function | Auth | Purpose |
+|---|---|---|
+| `POST /activate` | purchase key | First activation; returns a signed license. Same machine → re-issue. |
+| `POST /renew` | `license_id` + fingerprint | Silent subscription check-in; returns a fresh license. |
+| `POST /verify` | `x-admin-secret` | Support lookup. |
+| `POST /admin` | `x-admin-secret` | Issue customers/licenses/subscriptions; stats. |
+
+All deploy with `--no-verify-jwt`; safety comes from the purchase key / admin
+secret, not a user session.
+
+### 9.4 Why there are two signers
+
+Edge Functions run on **Deno** and cannot import the Node build of
+`@volumpos/license`. `supabase/functions/_shared/licenseSign.ts` is therefore a
+WebCrypto implementation of the same wire format. Trust is enforced by tests:
+`test/crossCompat.test.ts` signs in the hub and verifies with the package, and
+asserts the two serialize a payload to **byte-identical JSON**. 19 tests pass.
+
+### 9.5 Deploy status
+
+Code is complete, typechecked, and tested, but **the Supabase project itself has
+not been created** — that needs your Supabase account. The deploy steps are in
+the hub README (§Setup). Before going live, run
+`LICENSE_PRIVATE_KEY=... node --experimental-strip-types scripts/verify-keypair.ts`
+to confirm the hub's signing key matches the public key baked into the products.
+
+---
+
+## 9. Known constraints / gotchas
 
 1. **Legacy issuer is local-only.** `dev-dashboard` is still the current keygen.
    It has no Supabase. The hub replaces it in Phase 2.

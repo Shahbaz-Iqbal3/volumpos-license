@@ -304,13 +304,51 @@ WebCrypto implementation of the same wire format. Trust is enforced by tests:
 `test/crossCompat.test.ts` signs in the hub and verifies with the package, and
 asserts the two serialize a payload to **byte-identical JSON**. 19 tests pass.
 
-### 9.5 Deploy status
+### 9.5 Deploy status — LIVE
 
-Code is complete, typechecked, and tested, but **the Supabase project itself has
-not been created** — that needs your Supabase account. The deploy steps are in
-the hub README (§Setup). Before going live, run
-`LICENSE_PRIVATE_KEY=... node --experimental-strip-types scripts/verify-keypair.ts`
-to confirm the hub's signing key matches the public key baked into the products.
+**Deployed and verified end-to-end on 2026-09-10.**
+
+| Item | Value |
+|---|---|
+| Supabase project | `VolumPOS-License-Hub` |
+| Project ref | `pmtoxlydnookibkwnbac` |
+| Region | `ap-south-1` |
+| Functions URL | `https://pmtoxlydnookibkwnbac.supabase.co/functions/v1` |
+| Deployed functions | `activate`, `renew`, `verify`, `admin` (all ACTIVE) |
+| Migration | `0001_licensing_hub.sql` applied |
+
+Secrets set: `LICENSE_PRIVATE_KEY` (the family key from
+`Fabric_POS/desktop_POS/license-keys.json`) and `LICENSE_ADMIN_SECRET` (generated;
+stored locally at
+`C:\Users\DELL\.config\kilo\volumpos-license-deploy\hub-admin-secret.txt`).
+
+Verified behaviour:
+- `/admin` issues customers and licenses; purchase key shown once.
+- `/activate` returns a license that **the real `@volumpos/license` package
+  verifies**, including fuzzy matching (1 of 3 sources changed still valid).
+- Same machine re-issues without consuming a seat; a second seat is granted
+  under the limit; a third is denied `409`.
+- `/renew` is idempotent outside the renewal window and advances a subscription
+  exactly one cycle + 7-day buffer inside it.
+- Revoked licenses are denied on both `/activate` (403) and `/renew`
+  (`billing: false`).
+- `/verify` and `/admin` reject requests without the admin secret (403).
+
+Active deployed project uses the **live family key**, so licenses it issues are
+accepted by current product builds. No key rotation was needed.
+
+### 9.6 Admin panel
+
+`admin.html` is static. Serve it locally (e.g. `npx serve` in the hub repo),
+then enter:
+- Hub base URL: `https://pmtoxlydnookibkwnbac.supabase.co/functions/v1`
+- Admin secret: the value in `hub-admin-secret.txt`
+
+### 9.7 Rotating the PAT
+
+The Supabase personal access token used for deployment was shared in plaintext
+during setup. **Rotate it** in Supabase (Account → Access Tokens) once no longer
+needed, and update any place it was stored.
 
 ---
 

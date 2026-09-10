@@ -232,7 +232,7 @@ This is disruptive, which is why the current keypair is being reused.
 | **0** | No disruption to existing customers | Done by design — legacy keys still verify; only license code changed. |
 | **1** | Shared license module | **Done.** Package built, tested, hosted privately, and integrated into `resturent-pos`. |
 | **2** | Licensing Hub (Supabase): tables + `/activate`, `/renew`, `/verify` + admin panel | **Deployed and live.** See §9. |
-| **3** | Roll out to all products: Fabric integration, activation screen, multi-machine, silent renew | **Restaurant POS done; Fabric pending.** See §10. |
+| **3** | Roll out to all products: Fabric integration, activation screen, multi-machine, silent renew | **Done for both Restaurant and Fabrics.** See §10. |
 | **4** | Backfill existing customers at natural touchpoints | Not started. |
 | **5** | Retire legacy code; enable abuse alerts | Not started. |
 
@@ -269,12 +269,12 @@ This is disruptive, which is why the current keypair is being reused.
 Repo: `Shahbaz-Iqbal3/volumpos-licensing-hub` (private). See its own README for
 the full deploy runbook. Summary:
 
-### 9.1 What it is
+### 8.1 What it is
 
 A **separate** Supabase project, developer-owned, decoupled from every
 customer's data-sync project. Exposed only via Edge Functions.
 
-### 9.2 Schema
+### 8.2 Schema
 
 `customers`, `subscriptions`, `licenses`, `machine_activations`, `checkin_log`,
 plus `id_counters` for race-safe human ids (`CUST-0001`, `LIC-0000001`).
@@ -284,7 +284,7 @@ plus `id_counters` for race-safe human ids (`CUST-0001`, `LIC-0000001`).
 - The **purchase key is never stored**: only `key_hash` (SHA-256) and
   `key_last4`. The raw key is returned exactly once at issuance.
 
-### 9.3 Endpoints
+### 8.3 Endpoints
 
 | Function | Auth | Purpose |
 |---|---|---|
@@ -296,7 +296,7 @@ plus `id_counters` for race-safe human ids (`CUST-0001`, `LIC-0000001`).
 All deploy with `--no-verify-jwt`; safety comes from the purchase key / admin
 secret, not a user session.
 
-### 9.4 Why there are two signers
+### 8.4 Why there are two signers
 
 Edge Functions run on **Deno** and cannot import the Node build of
 `@volumpos/license`. `supabase/functions/_shared/licenseSign.ts` is therefore a
@@ -304,7 +304,7 @@ WebCrypto implementation of the same wire format. Trust is enforced by tests:
 `test/crossCompat.test.ts` signs in the hub and verifies with the package, and
 asserts the two serialize a payload to **byte-identical JSON**. 19 tests pass.
 
-### 9.5 Deploy status — LIVE
+### 8.5 Deploy status — LIVE
 
 **Deployed and verified end-to-end on 2026-09-10.**
 
@@ -337,14 +337,14 @@ Verified behaviour:
 Active deployed project uses the **live family key**, so licenses it issues are
 accepted by current product builds. No key rotation was needed.
 
-### 9.6 Admin panel
+### 8.6 Admin panel
 
 `admin.html` is static. Serve it locally (e.g. `npx serve` in the hub repo),
 then enter:
 - Hub base URL: `https://pmtoxlydnookibkwnbac.supabase.co/functions/v1`
 - Admin secret: the value in `hub-admin-secret.txt`
 
-### 9.7 Rotating the PAT
+### 8.7 Rotating the PAT
 
 The Supabase personal access token used for deployment was shared in plaintext
 during setup. **Rotate it** in Supabase (Account → Access Tokens) once no longer
@@ -352,9 +352,9 @@ needed, and update any place it was stored.
 
 ---
 
-## 10. Product rollout (Phase 3)
+## 9. Product rollout (Phase 3)
 
-### 10.1 Restaurant POS — done
+### 9.1 Restaurant POS — done
 
 Files added/changed in `resturent-pos/desktop_POS`:
 
@@ -385,25 +385,46 @@ Files added/changed in `resturent-pos/desktop_POS`:
 deployed hub, the returned license verified with the production public key, and
 `/renew` returned the expected no-op. 493 tests pass; typecheck and build clean.
 
-### 10.2 Fabric POS — pending
+### 9.2 Fabrics POS — done
 
-Not yet integrated. `Fabric_POS/desktop_POS` still uses its own `license.ts`
-with the original inline verifier. To finish Phase 3:
+`Fabric_POS/desktop_POS` mirrors the Restaurant rollout (commit `5c52520`):
 
-1. Add `@volumpos/license` as a git dependency and wire the deploy-key step into
-   `Fabric_POS/.github/workflows/release.yml` (mirroring `resturent-pos`).
-2. Port `license-hub.ts` and the `license.ts` changes.
-3. Apply the same UI changes to `LicenseLockout.tsx`, `SettingsScreen.tsx`,
-   `SetupWizard.tsx`, and the i18n files.
+- Added `@volumpos/license` (git dep) and externalized `better-sqlite3` /
+  `node-machine-id` in the main build.
+- Added the read-only deploy-key step to `Fabric_POS/.github/workflows/release.yml`
+  (secret `VOLUMPOS_LICENSE_DEPLOY_KEY`, already set on `desktop_POS`).
+- Rewired `src/main/license.ts` to the shared verifier + hub client; added
+  `license-hub.ts`, silent renewal, and the `licenseId` setting.
+- Moved `LicenseStatus`/`LicenseTier` into `src/shared/types.ts` (they were
+  re-declared inline in three renderer files).
+- Key-only activation UI in the lockout, Settings, and Setup Wizard, with the
+  same i18n strings.
+- **Fixed a latent bug:** `guard()` in `src/main/ipc.ts` emitted
+  `license:blocked` on the **main-process** EventEmitter, so the renderer's
+  `onLicenseBlocked` listener never fired. It is now sent to each window's
+  `webContents` via `notifyLicenseBlocked()`.
+- 13 new tests (hub client, seat-limit); 32 total pass. Typecheck, lint, and
+  `electron-vite build` all clean.
+
+**Product binding verified live:** a `FABRIC_POS` license issued by the hub
+rejects verification when presented as `RESTAURANT_POS`, and vice versa — the
+`p` field is enforced by the shared verifier in both apps.
+
+### 9.3 Remaining for a full rollout
+
+- Restaurant and Fabrics both now depend on the private package, so **both CI
+  workflows need the deploy key** (set on `resturent-pos` and `desktop_POS`).
+- LAN seat *enforcement* is still not wired in either app (the limit is
+  computed but no code caps connected clients).
 
 ---
 
-## 11. Known constraints / gotchas
+## 10. Known constraints / gotchas
 
 1. **Legacy issuer is still present.** `dev-dashboard` (local keygen) remains as
    the old tooling. New issuance should go through the hub admin panel; the
    legacy app is retained only for troubleshooting.
-2. **Seat enforcement is dead code** in `resturent-pos` (`occupySeat`/
+2. **Seat enforcement is dead code** in both products (`occupySeat`/
    `releaseSeat` have no callers). `resolveSeatLimit()` now returns the right
    *number*, but nothing consumes it to cap LAN clients yet.
 3. **Signature is verified at activation and renewal**, and a hub response is
@@ -411,7 +432,8 @@ with the original inline verifier. To finish Phase 3:
    the stored `licenseExpiry` between check-ins, so a hand-edited SQLite row
    would be honoured until the next activation/renewal. Re-verifying the stored
    key on every status read remains a possible hardening step.
-4. **Fabric POS is not integrated yet** — see §10.2.
+4. **The legacy `dev-dashboard` local issuer is now fully superseded.** Use the
+   hub admin panel for issuance; the old app remains only for reference.
 4. **`getMachineId()` still returns the raw `node-machine-id`** for display and
    legacy keys; the v2 fuzzy path uses `getMachineFingerprintHash()`.
 5. **`pwa-app/js/config.js` contains a Supabase `anon` key and a VAPID public

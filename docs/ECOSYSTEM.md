@@ -231,8 +231,8 @@ This is disruptive, which is why the current keypair is being reused.
 |---|---|---|
 | **0** | No disruption to existing customers | Done by design — legacy keys still verify; only license code changed. |
 | **1** | Shared license module | **Done.** Package built, tested, hosted privately, and integrated into `resturent-pos`. |
-| **2** | Licensing Hub (Supabase): tables + `/activate`, `/renew`, `/verify` + admin panel | **Code complete, not yet deployed.** See §9. |
-| **3** | Roll out to all products: Fabric integration, activation screen, multi-machine, silent renew | Not started. |
+| **2** | Licensing Hub (Supabase): tables + `/activate`, `/renew`, `/verify` + admin panel | **Deployed and live.** See §9. |
+| **3** | Roll out to all products: Fabric integration, activation screen, multi-machine, silent renew | **Restaurant POS done; Fabric pending.** See §10. |
 | **4** | Backfill existing customers at natural touchpoints | Not started. |
 | **5** | Retire legacy code; enable abuse alerts | Not started. |
 
@@ -352,15 +352,66 @@ needed, and update any place it was stored.
 
 ---
 
-## 9. Known constraints / gotchas
+## 10. Product rollout (Phase 3)
 
-1. **Legacy issuer is local-only.** `dev-dashboard` is still the current keygen.
-   It has no Supabase. The hub replaces it in Phase 2.
+### 10.1 Restaurant POS — done
+
+Files added/changed in `resturent-pos/desktop_POS`:
+
+| File | Role |
+|---|---|
+| `src/main/license-hub.ts` | Hub HTTP client (`/activate`, `/renew`) with a 15s timeout. Hub URL baked in; overridable via `POS_LICENSE_HUB_URL`. |
+| `src/main/license.ts` | Activation accepts a signed license (offline) **or** a purchase key (online). Every hub response is re-verified locally before storage. `renewLicenseSilently()` added. |
+| `src/main/index.ts` | IPC registration unchanged in shape; startup renewal driven from the renderer. |
+| `src/preload/index.ts` | Added `renewLicense()`. |
+| `src/renderer/src/App.tsx` | Calls `renewLicense()` once on mount (main no-ops unless inside the window). |
+| `LicenseLockout.tsx`, `SettingsScreen.tsx` | Key-only activation input + "internet needed once" note. |
+| `src/shared/types.ts` | `LicenseRenewResult`, `RENEW_LICENSE` channel, `licenseId` setting key. |
+| `tests/license-hub.test.ts`, `tests/license-seat-limit.test.ts` | 13 tests. |
+
+**Behaviour:**
+- Activation tries local verification first, so an already-signed license (any
+  existing customer, or a reinstall with the stored key) never needs internet.
+- A purchase key triggers one `/activate` call; the returned license is
+  re-verified with the baked-in public key, then `licenseKey`, `licenseExpiry`,
+  and `licenseId` are stored.
+- Startup silently calls `/renew`; the stored license is only replaced if the
+  fresh one verifies. Failures are ignored (grace period covers the gap).
+- **Seat limit:** hub licenses carry `al` (machines), not the legacy `c` (LAN
+  seats). `resolveSeatLimit()` prefers `c`, then `al`, then 1 — otherwise every
+  hub license would have silently capped the shop at one terminal.
+
+**Verified live:** the real `license-hub.ts` module activated against the
+deployed hub, the returned license verified with the production public key, and
+`/renew` returned the expected no-op. 493 tests pass; typecheck and build clean.
+
+### 10.2 Fabric POS — pending
+
+Not yet integrated. `Fabric_POS/desktop_POS` still uses its own `license.ts`
+with the original inline verifier. To finish Phase 3:
+
+1. Add `@volumpos/license` as a git dependency and wire the deploy-key step into
+   `Fabric_POS/.github/workflows/release.yml` (mirroring `resturent-pos`).
+2. Port `license-hub.ts` and the `license.ts` changes.
+3. Apply the same UI changes to `LicenseLockout.tsx`, `SettingsScreen.tsx`,
+   `SetupWizard.tsx`, and the i18n files.
+
+---
+
+## 11. Known constraints / gotchas
+
+1. **Legacy issuer is still present.** `dev-dashboard` (local keygen) remains as
+   the old tooling. New issuance should go through the hub admin panel; the
+   legacy app is retained only for troubleshooting.
 2. **Seat enforcement is dead code** in `resturent-pos` (`occupySeat`/
-   `releaseSeat` have no callers). Do not assume the LAN seat cap works.
-3. **Signature is verified at activation only.** After that, the stored
-   `licenseExpiry` in the SQLite `settings` table is trusted. Phase 3 should
-   re-verify at startup.
+   `releaseSeat` have no callers). `resolveSeatLimit()` now returns the right
+   *number*, but nothing consumes it to cap LAN clients yet.
+3. **Signature is verified at activation and renewal**, and a hub response is
+   always re-verified before storage. However, `getLicenseStatus()` still trusts
+   the stored `licenseExpiry` between check-ins, so a hand-edited SQLite row
+   would be honoured until the next activation/renewal. Re-verifying the stored
+   key on every status read remains a possible hardening step.
+4. **Fabric POS is not integrated yet** — see §10.2.
 4. **`getMachineId()` still returns the raw `node-machine-id`** for display and
    legacy keys; the v2 fuzzy path uses `getMachineFingerprintHash()`.
 5. **`pwa-app/js/config.js` contains a Supabase `anon` key and a VAPID public

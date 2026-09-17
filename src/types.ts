@@ -73,6 +73,8 @@ export type VerifiedLicense = {
   seatCount: number
   /** Activation limit, defaulting to `DEFAULT_ACTIVATION_LIMIT`. */
   activationLimit: number
+  /** Signed feature entitlements. Undefined means a legacy license with all features. */
+  features?: string[]
 }
 
 export type VerifyFailure = {

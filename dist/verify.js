@@ -71,7 +71,8 @@ export function verifyLicenseKey(key, publicKeyB64, options = {}) {
         expiresAt: payload.expiresAt,
         tier: payload.tier,
         seatCount: payload.seats ?? 1,
-        activationLimit: payload.activationLimit ?? DEFAULT_ACTIVATION_LIMIT
+        activationLimit: payload.activationLimit ?? DEFAULT_ACTIVATION_LIMIT,
+        features: payload.features
     };
 }
 //# sourceMappingURL=verify.js.map

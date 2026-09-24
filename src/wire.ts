@@ -25,6 +25,8 @@ export type WirePayload = {
   dm?: number
   /** Activation limit (machines). */
   al?: number
+  /** Maximum branches for multi-branch products. */
+  bl?: number
   c?: number
   ia?: string
 }
@@ -45,6 +47,7 @@ export function toWire(payload: LicensePayload): WirePayload {
   if (payload.features && payload.features.length > 0) wire.f = payload.features
   if (payload.durationMonths !== undefined) wire.dm = payload.durationMonths
   if (payload.activationLimit !== undefined) wire.al = payload.activationLimit
+  if (payload.branchLimit !== undefined) wire.bl = payload.branchLimit
   if (payload.seats !== undefined) wire.c = payload.seats
   if (payload.issuedAt) wire.ia = payload.issuedAt
   return wire
@@ -73,6 +76,7 @@ export function fromWire(raw: Record<string, unknown>): LicensePayload {
     features: Array.isArray(raw.f) ? (raw.f as string[]) : undefined,
     durationMonths: asNumber('dm'),
     activationLimit: asNumber('al'),
+    branchLimit: asNumber('bl'),
     seats: asNumber('c'),
     issuedAt: asString('ia'),
     sources

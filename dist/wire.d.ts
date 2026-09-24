@@ -23,6 +23,8 @@ export type WirePayload = {
     dm?: number;
     /** Activation limit (machines). */
     al?: number;
+    /** Maximum branches for multi-branch products. */
+    bl?: number;
     c?: number;
     ia?: string;
 };

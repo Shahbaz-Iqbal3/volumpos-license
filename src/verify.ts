@@ -105,6 +105,7 @@ export function verifyLicenseKey(
     tier: payload.tier,
     seatCount: payload.seats ?? 1,
     activationLimit: payload.activationLimit ?? DEFAULT_ACTIVATION_LIMIT,
+    branchLimit: payload.branchLimit ?? 1,
     features: payload.features
   }
 }

@@ -25,6 +25,8 @@ export function toWire(payload) {
         wire.dm = payload.durationMonths;
     if (payload.activationLimit !== undefined)
         wire.al = payload.activationLimit;
+    if (payload.branchLimit !== undefined)
+        wire.bl = payload.branchLimit;
     if (payload.seats !== undefined)
         wire.c = payload.seats;
     if (payload.issuedAt)
@@ -49,6 +51,7 @@ export function fromWire(raw) {
         features: Array.isArray(raw.f) ? raw.f : undefined,
         durationMonths: asNumber('dm'),
         activationLimit: asNumber('al'),
+        branchLimit: asNumber('bl'),
         seats: asNumber('c'),
         issuedAt: asString('ia'),
         sources

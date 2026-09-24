@@ -48,6 +48,8 @@ export type LicensePayload = {
   durationMonths?: number
   /** Max machines this license may be activated on. */
   activationLimit?: number
+  /** Max branches allowed when the `multi_branch` feature is present. */
+  branchLimit?: number
   /** Legacy LAN seat count (field `c`). Distinct from `activationLimit`. */
   seats?: number
   /** Issue timestamp, ISO-8601. */
@@ -73,6 +75,8 @@ export type VerifiedLicense = {
   seatCount: number
   /** Activation limit, defaulting to `DEFAULT_ACTIVATION_LIMIT`. */
   activationLimit: number
+  /** Maximum allowed branches (single-branch by default). */
+  branchLimit: number
   /** Signed feature entitlements. Undefined means a legacy license with all features. */
   features?: string[]
 }

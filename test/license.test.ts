@@ -34,7 +34,9 @@ describe('sign + verify round trip (v2)', () => {
       sources,
       expiresAt: expiryFromDays(365),
       tier: '1y',
-      activationLimit: 3
+      activationLimit: 3,
+      features: ['multi_branch'],
+      branchLimit: 4
     })
 
     const result = verifyLicenseKey(key, keys.publicKey, { fingerprint: sources, product: 'FABRIC_POS' })
@@ -42,7 +44,33 @@ describe('sign + verify round trip (v2)', () => {
     if (!result.ok) return
     expect(result.shopName).toBe('Test Shop')
     expect(result.activationLimit).toBe(3)
+    expect(result.payload.features).toEqual(['multi_branch'])
+    expect(result.payload.branchLimit).toBe(4)
     expect(result.payload.lid).toBe('LIC-0001')
+  })
+
+  it('verifies multi-branch entitlement and defaults legacy branch limit to one', () => {
+    const sources = { 'machine-guid': 'branch-host' }
+    const key = signed({
+      v: 2,
+      shop: 'Branch Shop',
+      fingerprint: 'composite',
+      sources,
+      features: ['multi_branch'],
+      branchLimit: 3,
+      expiresAt: expiryFromDays(365)
+    })
+    const withBranches = verifyLicenseKey(key, keys.publicKey, { fingerprint: sources })
+    expect(withBranches.ok).toBe(true)
+    if (withBranches.ok) {
+      expect(withBranches.payload.features).toEqual(['multi_branch'])
+      expect(withBranches.branchLimit).toBe(3)
+    }
+
+    const legacySources = { 'machine-guid': 'legacy' }
+    const legacy = signed({ shop: 'Legacy', fingerprint: 'x', sources: legacySources, expiresAt: expiryFromDays(30) })
+    const withoutBranches = verifyLicenseKey(legacy, keys.publicKey, { fingerprint: legacySources })
+    expect(withoutBranches.ok && withoutBranches.branchLimit).toBe(1)
   })
 
   it('rejects a different machine when too few sources match', () => {
